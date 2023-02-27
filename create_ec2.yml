@@ -1,0 +1,96 @@
+---
+- name: Create Ec2 instances
+  hosts: localhost
+  gather_facts: false
+
+  vars:
+     instance_name: AnsibleTestInstance
+     region: us-west-2
+     key_name: gitlab-runner-sturdynet
+     security_group: ansible-security-group
+     instance_type: t2.micro
+     image_id: ami-0735c191cf914754d
+     instance_count: 1
+     vpc_subnet_id: subnet-0c15b1c86a941728f
+
+  tasks:
+
+  # Block is a Group of Tasks combined together
+  - name: Get Info Block
+    block:
+      - name: Get Running instance Info
+        amazon.aws.ec2_instance_info:
+          region: us-west-2
+        register: ec2info
+
+      - name: Print info
+        debug: var="ec2info.instances"
+
+
+    # By specifying always on the tag, 
+    # I let this block to run all the time by module_default
+    # this is for security to net create ec2 instances accidentally
+    tags: ['always', 'getinfoonly']
+
+  - name: Create EC2 Block
+    block:
+
+      - name: Create a security group # 1 - Create my security group
+        local_action: 
+          module: ec2_group
+          name: "{{ security_group }}"
+          description: Security Group for webserver Servers
+          region: "{{ region }}"
+          rules:
+            - proto: tcp
+              from_port: 22
+              to_port: 22
+              cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 8080
+              to_port: 8080
+              cidr_ip: 0.0.0.0/0
+            - proto: tcp
+              from_port: 80
+              to_port: 80
+              cidr_ip: 0.0.0.0/0
+          rules_egress:
+            - proto: all
+              cidr_ip: 0.0.0.0/0
+        register: basic_firewall
+
+      - name: Launch ec2 instances
+        tags: create_ec2
+        amazon.aws.ec2_instance:
+          name: "{{ instance_name }}"
+          region: "{{ region }}"
+          key_name: "{{ key_name }}"
+          security_group: "{{ security_group }}"
+          network:
+            assign_public_ip: true
+          instance_type: "{{ instance_type }}"
+          image_id: "{{ image_id }}"
+          wait: yes
+          wait_timeout: 500
+          count: "{{ instance_count }}"
+          vpc_subnet_id: "{{ vpc_subnet_id }}"
+        register: newEc2InstanceInfo
+        delegate_to: localhost
+
+      # - name : Add instance to host group
+      #   add_host:
+      #     hostname: var="item.public_ip_address"
+      #     groups: [ec2]
+      #   loop: "{{ newEc2InstanceInfo.instances }}"
+
+      # - name: Wait for SSH to come up
+      #   local_action:
+      #     module: wait_for
+      #     host: var="item.public_ip_address"
+      #     port: 22
+      #     delay: 10
+      #     timeout: 120
+      #   loop: "{{ newEc2InstanceInfo.instances }}"
+    # By specifying never on the tag of this block, 
+    # I let this block to run only when explicitely being called
+    tags: ['never', 'ec2-create']
