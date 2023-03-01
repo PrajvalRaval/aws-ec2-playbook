@@ -2,6 +2,8 @@
 - name: Create Ec2 instances
   hosts: localhost
   gather_facts: false
+  become: true
+  become_user: apache
 
   vars:
      instance_name: AnsibleTestInstance
